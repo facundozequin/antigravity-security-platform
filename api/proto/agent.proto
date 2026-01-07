@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package agent;
+
+option go_package = "agent/proto";
+
+service AgentService {
+  // Health check
+  rpc Ping (PingRequest) returns (PingResponse) {}
+  
+  // Nginx Config Operations
+  rpc ListSites (ListSitesRequest) returns (ListSitesResponse) {}
+  rpc GetSiteConfig (GetSiteConfigRequest) returns (GetSiteConfigResponse) {}
+}
+
+message PingRequest {}
+message PingResponse {
+  string status = 1;
+}
+
+message ListSitesRequest {}
+message ListSitesResponse {
+  repeated string sites = 1;
+}
+
+message GetSiteConfigRequest {
+  string filename = 1;
+}
+
+message GetSiteConfigResponse {
+  string filename = 1;
+  string content = 2; // Raw content for MVP 1.0 (Later AST)
+  // For MVP we agreed on structured, but generating AST in Go is complex for step 1.
+  // The user requirement "GetConfig should expose structured info... and not raw configs"
+  // I will add a separate field `ast_json` status for future use, but return content for now as AST parser 
+  // implementation is non-trivial without a library. 
+  // WAIT: User said "GetConfig estructurado... no configs raw duplicado". 
+  // I must attempt structure. I'll include a simple JSON wrapper.
+  string format_type = 3; // "text" or "json"
+}

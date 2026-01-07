@@ -1,0 +1,39 @@
+# Common
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.bak
+*.tmp
+
+# Environment
+.env
+.env.*.local
+
+# Docker
+.docker/
+deploy/agent-socket/*.sock
+
+# Python (API)
+api/__pycache__/
+api/*.pyc
+api/.venv/
+api/venv/
+api/env/
+api/app/generated/
+
+# Go (Agent)
+agent/agent_bin
+agent/proto/*.pb.go
+
+# Frontend (React/Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+
+# Logs & Data
+deploy/nginx/logs/*.log
+deploy/postgres_data/
+deploy/clickhouse_data/
+*.log

@@ -1,0 +1,116 @@
+services:
+  # 0. Frontend Dashboard
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nginx-admin-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    networks:
+      - admin_net
+
+  # 1. The Target Nginx (Managed Proxy)
+  proxy:
+    image: nginx:alpine
+    container_name: nginx-admin-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_conf:/etc/nginx/sites-enabled
+      - nginx_logs:/var/log/nginx
+    labels:
+      - "com.nginxadmin.managed=true"
+    networks:
+      - public_net
+      - admin_net
+
+  # 2. Privileged Agent (The "Hands")
+  agent:
+    build: 
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: nginx-admin-agent
+    user: root # Explicitly root for filesystem operations
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # For 'docker exec nginx reload'
+      - nginx_conf:/host/etc/nginx/sites-enabled # Write access to configs
+      - ./deploy/agent-socket:/var/run/agent # Socket for IPC
+    depends_on:
+      - proxy
+    networks:
+      - admin_net
+    environment:
+      - AGENT_SOCKET_PATH=/var/run/agent/agent.sock
+      - MANAGED_CONTAINER_NAME=nginx-admin-proxy
+
+  # 3. Backend API (The "Brain") - Unprivileged
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: nginx-admin-api
+    user: "1000:1000" # Explicitly non-root
+    volumes:
+      - ./deploy/agent-socket:/var/run/agent:ro # Read access to socket
+    depends_on:
+      - agent
+      - db
+      - clickhouse
+    networks:
+      - admin_net
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/nginxadmin
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - AGENT_SOCKET_PATH=/var/run/agent/agent.sock
+
+  # 4. Data Layer
+  db:
+    image: postgres:15-alpine
+    container_name: nginx-admin-db
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=nginxadmin
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - admin_net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: nginx-admin-clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    networks:
+      - admin_net
+
+  # 5. Log Shipper
+  vector:
+    image: timberio/vector:0.34.0-alpine
+    container_name: nginx-admin-vector
+    volumes:
+      - ./deploy/vector/vector.toml:/etc/vector/vector.toml:ro
+      - nginx_logs:/var/log/nginx:ro # Read logs from volume
+    depends_on:
+      - clickhouse
+    networks:
+      - admin_net
+
+volumes:
+  nginx_conf:
+  nginx_logs:
+  postgres_data:
+  clickhouse_data:
+
+networks:
+  public_net: # Exposed to WAN
+  admin_net:  # Internal Management Network
