@@ -1,3 +1,4 @@
+import React from 'react'
 export default function ConfigViewer({ filename, content }) {
     // Simple nginx syntax highlighting
     const highlightNginx = (code) => {
