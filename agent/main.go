@@ -56,17 +56,58 @@ func (s *server) GetSiteConfig(ctx context.Context, in *pb.GetSiteConfigRequest)
 		return nil, err
 	}
 
-	// For MVP Phase 1 (Observability), we return the raw content wrapped 
-	// The "Structure" requirement will be met by wrapping it in JSON response mostly,
-	// implementing a full NGinx AST parser in Go for MVP is risky.
-	// We'll return it as-is for the Viewer component.
-	
 	return &pb.GetSiteConfigResponse{
 		Filename:   baseName,
 		Content:    string(content),
 		FormatType: "nginx-conf",
 	}, nil
 }
+
+// Fail2Ban Implementation (Mocks for MVP)
+func (s *server) GetFail2BanBans(ctx context.Context, in *pb.GetBansRequest) (*pb.GetBansResponse, error) {
+	bans := []*pb.BanEntry{
+		{Ip: "45.33.32.156", Jail: "nginx-http-auth", BannedAt: "2026-04-06T12:00:00Z", BanTime: 3600, Reason: "Too many 401s"},
+		{Ip: "103.21.244.0", Jail: "fail2ban-nginx-limit", BannedAt: "2026-04-06T11:00:00Z", BanTime: 86400, Reason: "Rate limit exceeded"},
+	}
+	return &pb.GetBansResponse{Bans: bans}, nil
+}
+
+func (s *server) BanIP(ctx context.Context, in *pb.BanIPRequest) (*pb.ActionResponse, error) {
+	log.Printf("Banning IP: %s (Reason: %s)", in.Ip, in.Reason)
+	return &pb.ActionResponse{Success: true, Message: fmt.Sprintf("IP %s banned successfully", in.Ip)}, nil
+}
+
+func (s *server) UnbanIP(ctx context.Context, in *pb.UnbanIPRequest) (*pb.ActionResponse, error) {
+	log.Printf("Unbanning IP: %s", in.Ip)
+	return &pb.ActionResponse{Success: true, Message: fmt.Sprintf("IP %s unbanned successfully", in.Ip)}, nil
+}
+
+func (s *server) GetFail2BanJails(ctx context.Context, in *pb.GetJailsRequest) (*pb.GetJailsResponse, error) {
+	jails := []*pb.JailInfo{
+		{Name: "nginx-http-auth", Enabled: true, Maxretry: 5, Bantime: 3600, CurrentlyBanned: 12},
+		{Name: "nginx-botsearch", Enabled: true, Maxretry: 2, Bantime: 86400, CurrentlyBanned: 4},
+		{Name: "sshd", Enabled: true, Maxretry: 3, Bantime: 3600, CurrentlyBanned: 7},
+	}
+	return &pb.GetJailsResponse{Jails: jails}, nil
+}
+
+// Logs Streaming (Simulation)
+func (s *server) StreamLogs(in *pb.StreamLogsRequest, stream pb.AgentService_StreamLogsServer) error {
+	log.Printf("Starting log stream for: %s", in.Source)
+	// In a real implementation, we would tail files. 
+	// For MVP, we send one initial log and keep the connection open or send a few.
+	entry := &pb.LogEntry{
+		Timestamp: "2026-04-06T13:00:00Z",
+		Source:    in.Source,
+		Level:     "INFO",
+		Message:   "Log stream initialized for " + in.Source,
+	}
+	if err := stream.Send(entry); err != nil {
+		return err
+	}
+	return nil
+}
+
 
 func main() {
 	log.Println("Starting Nginx Admin Agent...")

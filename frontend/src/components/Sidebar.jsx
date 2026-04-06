@@ -4,15 +4,22 @@ import { NavLink } from 'react-router-dom';
 export default function Sidebar() {
     const menuItems = [
         { path: '/', label: 'Dashboard', icon: '📊' },
-        { path: '/sites', label: 'Sites', icon: '🌐' },
+        { path: '/sites', label: 'NGINX', icon: '🌐' },
+        { path: '/waf', label: 'WAF', icon: '🛡️' },
+        { path: '/fail2ban', label: 'Fail2Ban', icon: '🚫' },
+        { path: '/logs', label: 'Logs', icon: '📝' },
+        { path: '/threat-intel', label: 'Threat Intel', icon: '🔍' },
+        { path: '/ai', label: 'IA Analysis', icon: '🤖' },
+        { path: '/alerts', label: 'Alerts', icon: '🔔' },
+        { path: '/settings', label: 'Settings', icon: '⚙️' },
     ];
 
     return (
         <aside className="sidebar">
             <div className="sidebar-header">
                 <div className="logo">
-                    <span className="logo-icon">⚡</span>
-                    <span className="logo-text">Nginx Admin</span>
+                    <span className="logo-icon">🛡️</span>
+                    <span className="logo-text">Security Platform</span>
                 </div>
             </div>
 

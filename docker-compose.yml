@@ -105,11 +105,21 @@ services:
     networks:
       - admin_net
 
+  # 6. Local AI (Ollama)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nginx-admin-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - admin_net
+
 volumes:
   nginx_conf:
   nginx_logs:
   postgres_data:
   clickhouse_data:
+  ollama_data:
 
 networks:
   public_net: # Exposed to WAN
