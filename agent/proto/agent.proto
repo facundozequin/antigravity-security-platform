@@ -11,6 +11,15 @@ service AgentService {
   // Nginx Config Operations
   rpc ListSites (ListSitesRequest) returns (ListSitesResponse) {}
   rpc GetSiteConfig (GetSiteConfigRequest) returns (GetSiteConfigResponse) {}
+
+  // Fail2Ban Operations
+  rpc GetFail2BanBans (GetBansRequest) returns (GetBansResponse) {}
+  rpc BanIP (BanIPRequest) returns (ActionResponse) {}
+  rpc UnbanIP (UnbanIPRequest) returns (ActionResponse) {}
+  rpc GetFail2BanJails (GetJailsRequest) returns (GetJailsResponse) {}
+
+  // Logs
+  rpc StreamLogs (StreamLogsRequest) returns (stream LogEntry) {}
 }
 
 message PingRequest {}
@@ -29,12 +38,55 @@ message GetSiteConfigRequest {
 
 message GetSiteConfigResponse {
   string filename = 1;
-  string content = 2; // Raw content for MVP 1.0 (Later AST)
-  // For MVP we agreed on structured, but generating AST in Go is complex for step 1.
-  // The user requirement "GetConfig should expose structured info... and not raw configs"
-  // I will add a separate field `ast_json` status for future use, but return content for now as AST parser 
-  // implementation is non-trivial without a library. 
-  // WAIT: User said "GetConfig estructurado... no configs raw duplicado". 
-  // I must attempt structure. I'll include a simple JSON wrapper.
-  string format_type = 3; // "text" or "json"
+  string content = 2;
+  string format_type = 3;
 }
+
+// Fail2Ban
+message GetBansRequest {}
+message BanEntry {
+  string ip = 1;
+  string jail = 2;
+  string banned_at = 3;
+  int32 ban_time = 4;
+  string reason = 5;
+}
+message GetBansResponse {
+  repeated BanEntry bans = 1;
+}
+
+message BanIPRequest {
+  string ip = 1;
+  string reason = 2;
+}
+message UnbanIPRequest {
+  string ip = 1;
+}
+message ActionResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetJailsRequest {}
+message JailInfo {
+  string name = 1;
+  bool enabled = 2;
+  int32 maxretry = 3;
+  int32 bantime = 4;
+  int32 currently_banned = 5;
+}
+message GetJailsResponse {
+  repeated JailInfo jails = 1;
+}
+
+// Logs
+message StreamLogsRequest {
+  string source = 1;
+}
+message LogEntry {
+  string timestamp = 1;
+  string source = 2;
+  string level = 3;
+  string message = 4;
+}
+
