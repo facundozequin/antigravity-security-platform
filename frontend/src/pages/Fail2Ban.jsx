@@ -1,20 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 
-const MOCK_BANS = [
-    { ip: '45.33.32.156', jail: 'nginx-http-auth', banned_at: new Date(Date.now() - 3600000).toISOString(), ban_time: 3600, reason: 'Too many 401s', country: 'US' },
-    { ip: '103.21.244.0', jail: 'fail2ban-nginx-limit', banned_at: new Date(Date.now() - 7200000).toISOString(), ban_time: 86400, reason: 'Rate limit exceeded', country: 'CN' },
-    { ip: '192.99.15.44', jail: 'sshd', banned_at: new Date(Date.now() - 1800000).toISOString(), ban_time: 3600, reason: 'Brute force SSH', country: 'CA' },
-    { ip: '185.220.101.21', jail: 'nginx-botsearch', banned_at: new Date(Date.now() - 600000).toISOString(), ban_time: 86400, reason: 'Bot scanning', country: 'DE' },
-];
-
-const MOCK_JAILS = [
-    { name: 'nginx-http-auth', enabled: true, maxretry: 5, bantime: 3600, findtime: 600, currently_banned: 12 },
-    { name: 'nginx-botsearch', enabled: true, maxretry: 2, bantime: 86400, findtime: 3600, currently_banned: 4 },
-    { name: 'sshd', enabled: true, maxretry: 3, bantime: 3600, findtime: 600, currently_banned: 7 },
-    { name: 'fail2ban-nginx-limit', enabled: false, maxretry: 10, bantime: 3600, findtime: 10, currently_banned: 0 },
-];
-
 export default function Fail2Ban() {
     const [bans, setBans] = useState([]);
     const [jails, setJails] = useState([]);
@@ -23,21 +9,28 @@ export default function Fail2Ban() {
     const [banIpInput, setBanIpInput] = useState('');
     const [banReason, setBanReason] = useState('');
     const [feedback, setFeedback] = useState(null);
+    
+    // Jail Form State
+    const [editingJail, setEditingJail] = useState({
+        name: '', log_path: '/var/log/nginx/access.log', maxretry: 5, findtime: 600, bantime: 3600, enabled: true
+    });
 
     useEffect(() => {
         const fetchData = async () => {
             try {
                 const [b, j] = await Promise.all([
-                    api.getFail2BanBans().catch(() => MOCK_BANS),
-                    api.getFail2BanJails().catch(() => MOCK_JAILS),
+                    api.getFail2BanBans().catch(() => []),
+                    api.getFail2BanJails().catch(() => []),
                 ]);
-                setBans(b);
-                setJails(j);
+                setBans(Array.isArray(b) ? b : []);
+                setJails(Array.isArray(j) ? j : []);
             } finally {
                 setLoading(false);
             }
         };
         fetchData();
+        const interval = setInterval(fetchData, 10000); // Poll every 10s
+        return () => clearInterval(interval);
     }, []);
 
     const handleBan = async (e) => {
@@ -69,11 +62,45 @@ export default function Fail2Ban() {
     };
 
     const timeRemaining = (bannedAt, banTime) => {
-        const end = new Date(bannedAt).getTime() + banTime * 1000;
+        const end = new Date(bannedAt).getTime() + (banTime || 3600) * 1000;
         const diff = Math.max(0, end - Date.now());
         const h = Math.floor(diff / 3600000);
         const m = Math.floor((diff % 3600000) / 60000);
         return diff === 0 ? 'Expired' : `${h}h ${m}m`;
+    };
+
+    const handleSaveJail = async (e) => {
+        e.preventDefault();
+        try {
+            const saved = await api.saveFail2BanJail(editingJail);
+            // Replace or append
+            setJails(prev => {
+                const filtered = prev.filter(j => j.name !== saved.name);
+                return [...filtered, saved];
+            });
+            setFeedback({ type: 'success', msg: `Jail ${saved.name} guardada exitosamente.` });
+            setActiveTab('jails');
+            setEditingJail({ name: '', log_path: '/var/log/nginx/access.log', maxretry: 5, findtime: 600, bantime: 3600, enabled: true });
+        } catch {
+            setFeedback({ type: 'error', msg: 'Error al guardar Jail' });
+        }
+        setTimeout(() => setFeedback(null), 3000);
+    };
+
+    const handleDeleteJail = async (id, name) => {
+        try {
+            await api.deleteFail2BanJail(id);
+            setJails(prev => prev.filter(j => j.id !== id));
+            setFeedback({ type: 'success', msg: `Jail ${name} eliminada.` });
+        } catch {
+            setFeedback({ type: 'error', msg: 'Error al eliminar Jail' });
+        }
+        setTimeout(() => setFeedback(null), 3000);
+    };
+
+    const openEditJail = (jail) => {
+        setEditingJail(jail);
+        setActiveTab('edit-jail');
     };
 
     if (loading) return <div className="loading"><div className="spinner"></div></div>;
@@ -93,7 +120,7 @@ export default function Fail2Ban() {
                 {[
                     { label: 'IPs Baneadas', value: bans.length, color: '#ef4444' },
                     { label: 'Jails Activas', value: jails.filter(j => j.enabled).length, color: '#6366f1' },
-                    { label: 'Total Banned (jails)', value: jails.reduce((a, j) => a + j.currently_banned, 0), color: '#f59e0b' },
+                    { label: 'Total Banned (jails)', value: jails.reduce((a, j) => a + (j.currently_banned || 0), 0), color: '#f59e0b' },
                 ].map(s => (
                     <div key={s.label} className="card stats-card">
                         <div className="label">{s.label}</div>
@@ -103,10 +130,10 @@ export default function Fail2Ban() {
             </div>
 
             {/* Tabs */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-                {['bans', 'jails', 'manual-ban'].map(tab => (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                {['bans', 'jails', 'manual-ban', 'edit-jail'].map(tab => (
                     <button key={tab} onClick={() => setActiveTab(tab)} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500, background: activeTab === tab ? 'var(--accent-gradient)' : 'var(--bg-card)', color: activeTab === tab ? 'white' : 'var(--text-secondary)' }}>
-                        {tab === 'bans' ? '🚫 IPs Baneadas' : tab === 'jails' ? '⚙️ Jails' : '➕ Banear IP'}
+                        {tab === 'bans' ? '🚫 IPs Baneadas' : tab === 'jails' ? '⚙️ Jails' : tab === 'manual-ban' ? '➕ Banear IP' : '📝 Editor de Jails'}
                     </button>
                 ))}
             </div>
@@ -127,7 +154,7 @@ export default function Fail2Ban() {
                                 {bans.map((ban, i) => (
                                     <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
                                         <td style={{ padding: '12px 16px', fontFamily: 'monospace', color: 'var(--error)' }}>{ban.ip}</td>
-                                        <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{ban.country}</td>
+                                        <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{ban.country || 'Unknown'}</td>
                                         <td style={{ padding: '12px 16px' }}><span style={{ background: 'rgba(99,102,241,0.15)', color: 'var(--accent-primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>{ban.jail}</span></td>
                                         <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{ban.reason}</td>
                                         <td style={{ padding: '12px 16px', color: 'var(--warning)' }}>{timeRemaining(ban.banned_at, ban.ban_time)}</td>
@@ -159,8 +186,12 @@ export default function Fail2Ban() {
                                     <span>maxretry: <strong style={{ color: 'var(--text-primary)' }}>{jail.maxretry}</strong></span>
                                     <span>bantime: <strong style={{ color: 'var(--text-primary)' }}>{jail.bantime}s</strong></span>
                                     <span>findtime: <strong style={{ color: 'var(--text-primary)' }}>{jail.findtime}s</strong></span>
-                                    <span>currently banned: <strong style={{ color: 'var(--error)' }}>{jail.currently_banned}</strong></span>
+                                    <span>currently banned: <strong style={{ color: 'var(--error)' }}>{jail.currently_banned || 0}</strong></span>
                                 </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button onClick={() => openEditJail(jail)} className="btn small">Editar</button>
+                                {jail.id && <button onClick={() => handleDeleteJail(jail.id, jail.name)} className="btn small error">Eliminar</button>}
                             </div>
                         </div>
                     ))}
@@ -182,6 +213,48 @@ export default function Fail2Ban() {
                         <button type="submit" style={{ padding: '12px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #ef4444, #dc2626)', color: 'white', fontWeight: 600, cursor: 'pointer', fontSize: '1rem' }}>
                             🚫 Banear IP
                         </button>
+                    </form>
+                </div>
+            )}
+
+            {activeTab === 'edit-jail' && (
+                <div className="card" style={{ maxWidth: '600px' }}>
+                    <h2 style={{ marginBottom: '20px', fontSize: '1.1rem', fontWeight: 600 }}>{editingJail.id ? `Editar Jail: ${editingJail.name}` : 'Crear Nueva Jail'}</h2>
+                    <form onSubmit={handleSaveJail} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ display: 'flex', gap: '16px' }}>
+                            <div style={{ flex: 1 }}>
+                                <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '6px' }}>Nombre</label>
+                                <input required value={editingJail.name} readOnly={!!editingJail.id} onChange={e => setEditingJail({...editingJail, name: e.target.value})} placeholder="ej. wp-login" style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '1rem' }} />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', marginTop: '24px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                                    <input type="checkbox" checked={editingJail.enabled} onChange={e => setEditingJail({...editingJail, enabled: e.target.checked})} style={{ width: '18px', height: '18px' }} />
+                                    Activar Jail inmediatamente
+                                </label>
+                            </div>
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '6px' }}>Log Path (Ruta de registros a escanear)</label>
+                            <input required value={editingJail.log_path} onChange={e => setEditingJail({...editingJail, log_path: e.target.value})} placeholder="/var/log/nginx/access.log" style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '1rem' }} />
+                        </div>
+                        <div style={{ display: 'flex', gap: '16px' }}>
+                            <div style={{ flex: 1 }}>
+                                <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '6px' }}>Max Retry</label>
+                                <input required type="number" value={editingJail.maxretry} onChange={e => setEditingJail({...editingJail, maxretry: parseInt(e.target.value)})} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }} />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '6px' }}>Find Time (s)</label>
+                                <input required type="number" value={editingJail.findtime} onChange={e => setEditingJail({...editingJail, findtime: parseInt(e.target.value)})} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }} />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '6px' }}>Ban Time (s)</label>
+                                <input required type="number" value={editingJail.bantime} onChange={e => setEditingJail({...editingJail, bantime: parseInt(e.target.value)})} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }} />
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
+                            <button type="button" className="btn small" onClick={() => setActiveTab('jails')}>Cancelar</button>
+                            <button type="submit" className="btn primary">💾 Guardar Jail</button>
+                        </div>
                     </form>
                 </div>
             )}

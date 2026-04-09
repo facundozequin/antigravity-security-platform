@@ -11,6 +11,11 @@ services:
       - api
     networks:
       - admin_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   # 1. The Target Nginx (Managed Proxy)
   proxy:
@@ -28,27 +33,54 @@ services:
     networks:
       - public_net
       - admin_net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
-  # 2. Privileged Agent (The "Hands")
+  # 2. Docker Socket Proxy (Restricted Command Execution)
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: nginx-admin-docker-proxy
+    privileged: true
+    environment:
+      - CONTAINERS=1 # Allow container actions
+      - EXEC=1       # Allow exec actions for reloading
+      - POST=1       # Allow POST requests
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - admin_net
+
+  # 3. Privileged Agent (The "Hands")
   agent:
     build: 
       context: ./agent
       dockerfile: Dockerfile
     container_name: nginx-admin-agent
-    user: root # Explicitly root for filesystem operations
+    user: root # Needed to write config files to volumes
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock # For 'docker exec nginx reload'
       - nginx_conf:/host/etc/nginx/sites-enabled # Write access to configs
+      - fail2ban_conf:/host/etc/fail2ban/jail.d # Write access to fail2ban jails
       - ./deploy/agent-socket:/var/run/agent # Socket for IPC
     depends_on:
       - proxy
+      - docker-proxy
     networks:
       - admin_net
     environment:
       - AGENT_SOCKET_PATH=/var/run/agent/agent.sock
+      - DOCKER_HOST=tcp://docker-proxy:2375
       - MANAGED_CONTAINER_NAME=nginx-admin-proxy
+      - FAIL2BAN_CONTAINER_NAME=nginx-admin-fail2ban
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
 
-  # 3. Backend API (The "Brain") - Unprivileged
+  # 4. Backend API (The "Brain") - Unprivileged
   api:
     build:
       context: ./api
@@ -64,22 +96,37 @@ services:
     networks:
       - admin_net
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/nginxadmin
-      - CLICKHOUSE_URL=http://clickhouse:8123
+      - DATABASE_URL=postgresql+asyncpg://admin:securepassword@db:5432/nginxadmin
+      - CH_HOST=clickhouse
+      - CH_PORT=8123
+      - CH_USER=default
+      - CH_PASS=
       - AGENT_SOCKET_PATH=/var/run/agent/agent.sock
+      - JWT_SECRET=change_me_in_production
+      - API_ENV=production
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
-  # 4. Data Layer
+  # 5. Data Layer
   db:
     image: postgres:15-alpine
     container_name: nginx-admin-db
     environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=securepassword
       - POSTGRES_DB=nginxadmin
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - admin_net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   clickhouse:
     image: clickhouse/clickhouse-server:latest
@@ -90,10 +137,16 @@ services:
         hard: 262144
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+      - ./deploy/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - admin_net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G
 
-  # 5. Log Shipper
+  # 6. Log Shipper
   vector:
     image: timberio/vector:0.34.0-alpine
     container_name: nginx-admin-vector
@@ -104,8 +157,13 @@ services:
       - clickhouse
     networks:
       - admin_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
-  # 6. Local AI (Ollama)
+  # 7. Local AI (Ollama)
   ollama:
     image: ollama/ollama:latest
     container_name: nginx-admin-ollama
@@ -113,6 +171,28 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - admin_net
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 6G
+
+  # 8. Fail2Ban
+  fail2ban:
+    image: lscr.io/linuxserver/fail2ban:latest
+    container_name: nginx-admin-fail2ban
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    network_mode: "service:proxy" # Use proxy's network to drop traffic via iptables
+    volumes:
+      - fail2ban_conf:/config/fail2ban/jail.d
+      - nginx_logs:/var/log/nginx:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
 volumes:
   nginx_conf:
@@ -120,6 +200,7 @@ volumes:
   postgres_data:
   clickhouse_data:
   ollama_data:
+  fail2ban_conf:
 
 networks:
   public_net: # Exposed to WAN

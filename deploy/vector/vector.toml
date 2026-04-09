@@ -1,19 +1,43 @@
-[sources.nginx_logs]
+[sources.nginx_access]
 type = "file"
 include = ["/var/log/nginx/access.log"]
-read_from = "end"
+read_from = "beginning"
+
+[sources.modsec_audit]
+type = "file"
+include = ["/var/log/nginx/modsec_audit.log"]
+read_from = "beginning"
 
 [transforms.parse_nginx]
 type = "remap"
-inputs = ["nginx_logs"]
+inputs = ["nginx_access"]
 source = '''
-  . = parse_json!(.message)
+. = parse_common_log!(.message)
+.timestamp = parse_timestamp!(.timestamp, format: "%d/%b/%Y:%H:%M:%S %z")
+.status = to_int!(.status)
+.size = to_int!(.size)
 '''
 
-[sinks.clickhouse]
+[transforms.parse_modsec]
+type = "remap"
+inputs = ["modsec_audit"]
+source = '''
+# Simple parsing for ModSecurity audit logs (JSON format is better, but let's assume default for now)
+. = parse_json(.message) ?? { "msg": "failed to parse modsec log", "raw": .message }
+'''
+
+[sinks.clickhouse_nginx]
 type = "clickhouse"
 inputs = ["parse_nginx"]
 endpoint = "http://clickhouse:8123"
-database = "default"
-table = "access_logs"
+database = "security_platform"
+table = "nginx_logs"
+skip_unknown_fields = true
+
+[sinks.clickhouse_waf]
+type = "clickhouse"
+inputs = ["parse_modsec"]
+endpoint = "http://clickhouse:8123"
+database = "security_platform"
+table = "waf_events"
 skip_unknown_fields = true

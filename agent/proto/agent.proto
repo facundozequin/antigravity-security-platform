@@ -20,6 +20,9 @@ service AgentService {
 
   // Logs
   rpc StreamLogs (StreamLogsRequest) returns (stream LogEntry) {}
+
+  // Sync Configuration
+  rpc SyncConfig (SyncConfigRequest) returns (ActionResponse) {}
 }
 
 message PingRequest {}
@@ -88,5 +91,13 @@ message LogEntry {
   string source = 2;
   string level = 3;
   string message = 4;
+}
+
+// Config Sync
+message SyncConfigRequest {
+  string target = 1; // "nginx" or "fail2ban"
+  string filename = 2;
+  string content = 3;
+  bool reload_after = 4;
 }
 

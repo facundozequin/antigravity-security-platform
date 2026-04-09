@@ -29,10 +29,15 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o agent_bin main.go
 # --- Final Stage ---
 FROM alpine:latest
 
+# Install Nginx for syntax validation
+RUN apk add --no-cache nginx
+
 WORKDIR /app
 
 # Create socket directory
 RUN mkdir -p /var/run/agent
+# Create nginx directories if missing (for validation context)
+RUN mkdir -p /etc/nginx/sites-enabled /etc/nginx/modsecurity/rules.d
 
 COPY --from=builder /app/agent_bin /app/agent
 
