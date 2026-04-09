@@ -10,7 +10,10 @@ export default function Sidebar() {
         { path: '/logs', label: 'Logs', icon: '📝' },
         { path: '/threat-intel', label: 'Threat Intel', icon: '🔍' },
         { path: '/ai', label: 'IA Analysis', icon: '🤖' },
+        { path: '/remediation', label: 'Remediation', icon: '⚡' },
+        { path: '/intelligence', label: 'Intelligence', icon: '🧠' },
         { path: '/alerts', label: 'Alerts', icon: '🔔' },
+        { path: '/reports', label: 'Reports', icon: '📄' },
         { path: '/settings', label: 'Settings', icon: '⚙️' },
     ];
 

@@ -37,34 +37,31 @@ export default function Logs() {
     const [paused, setPaused] = useState(false);
     const bottomRef = useRef(null);
 
+    const fetchLogs = async () => {
+        try {
+            const data = await api.getLogs(1, { 
+                source: source === 'all' ? '' : source,
+                q: search
+            });
+            setLogs(data.logs || []);
+        } catch (err) {
+            console.error('Failed to fetch logs:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
-        const fetchLogs = async () => {
-            try {
-                const data = await api.getLogs(1, { source }).catch(() => MOCK_LOGS);
-                setLogs(Array.isArray(data) ? data : data.logs || MOCK_LOGS);
-            } finally {
-                setLoading(false);
-            }
-        };
+        setLoading(true);
         fetchLogs();
     }, [source]);
 
-    // Simulate live streaming
+    // Polling for live logs
     useEffect(() => {
         if (paused) return;
-        const SAMPLES = [
-            { source: 'nginx-access', level: 'INFO', message: () => `${randomIp()} - GET /api/data ${randomStatus()} ${(Math.random() * 0.1).toFixed(3)}s` },
-            { source: 'fail2ban', level: 'WARN', message: () => `Ban ${randomIp()} (nginx-http-auth)` },
-            { source: 'modsecurity', level: 'WARN', message: () => `[id "942100"] Suspicious request from ${randomIp()}` },
-            { source: 'nginx-error', level: 'ERROR', message: () => `upstream connect error from ${randomIp()}` },
-        ];
-        const interval = setInterval(() => {
-            const sample = SAMPLES[Math.floor(Math.random() * SAMPLES.length)];
-            const newLog = { timestamp: new Date().toISOString(), source: sample.source, level: sample.level, message: sample.message() };
-            setLogs(prev => [...prev.slice(-200), newLog]);
-        }, 2000);
+        const interval = setInterval(fetchLogs, 5000);
         return () => clearInterval(interval);
-    }, [paused]);
+    }, [paused, source, search]);
 
     useEffect(() => {
         if (autoScroll && bottomRef.current) {
@@ -72,13 +69,7 @@ export default function Logs() {
         }
     }, [logs, autoScroll]);
 
-    const randomIp = () => `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
-    const randomStatus = () => [200, 200, 200, 304, 401, 403, 404, 500][Math.floor(Math.random() * 8)];
-
-    const filtered = logs.filter(log =>
-        (source === 'all' || log.source === source) &&
-        (search === '' || log.message.toLowerCase().includes(search.toLowerCase()))
-    );
+    const filtered = logs; // Filtering is now server-side
 
     const exportLogs = () => {
         const content = filtered.map(l => `[${l.timestamp}] [${l.source}] [${l.level}] ${l.message}`).join('\n');
@@ -123,7 +114,29 @@ export default function Logs() {
                         <span style={{ color: LEVEL_COLORS[log.level] || 'var(--text-primary)', flexShrink: 0, minWidth: '60px' }}>
                             [{log.level}]
                         </span>
-                        <span style={{ color: 'var(--text-primary)', wordBreak: 'break-all' }}>{log.message}</span>
+                        <span style={{ color: 'var(--text-primary)', wordBreak: 'break-all' }}>
+                            {log.reputation && (
+                                <span 
+                                    title={log.reputation.description || "IP Reputation Classification"}
+                                    style={{ 
+                                        display: 'inline-block',
+                                        padding: '0 6px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.65rem',
+                                        marginRight: '8px',
+                                        fontWeight: 800,
+                                        background: log.reputation.class === 'malicious' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                                        color: log.reputation.class === 'malicious' ? '#ef4444' : '#f59e0b',
+                                        border: `1px solid ${log.reputation.class === 'malicious' ? '#ef4444' : '#f59e0b'}`,
+                                        verticalAlign: 'middle',
+                                        textTransform: 'uppercase'
+                                    }}
+                                >
+                                    {log.reputation.class}
+                                </span>
+                            )}
+                            {log.message}
+                        </span>
                     </div>
                 ))}
                 <div ref={bottomRef} />

@@ -62,5 +62,22 @@ class AgentClient:
         except grpc.RpcError as e:
             raise Exception(f"Agent Error: {e.details()}")
 
+    def sync_config(self, target: str, filename: str, content: str, reload_after: bool = True) -> bool:
+        if not self.stub: self.connect()
+        try:
+            req = agent_pb2.SyncConfigRequest(
+                target=target,
+                filename=filename,
+                content=content,
+                reload_after=reload_after
+            )
+            response = self.stub.SyncConfig(req)
+            if not response.success:
+                print(f"Agent Config Sync Failed: {response.message}")
+            return response.success
+        except grpc.RpcError as e:
+            print(f"Agent RPC Error: {e.details()}")
+            return False
+
 # Singleton
 agent_client = AgentClient()
